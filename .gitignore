@@ -1,0 +1,41 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Build directories
+dist/
+.next/
+out/
+build/
+coverage/
+
+# Databases & local volumes
+postgres_data/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# IDEs & System files
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+
+# Documentation Exclusions
+# Ignore all markdown files globally so they are not committed to git
+*.md
+**/*.md
+
+# Exclude README.md files specifically so repo readme remains tracked
+!README.md
+!**/README.md

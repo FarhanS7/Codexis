@@ -1,0 +1,12 @@
+{
+  "name": "ai-code-reviewer",
+  "private": true,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "workspaces": [
+    "backend",
+    "frontend",
+    "shared"
+  ]
+}
