@@ -1,8 +1,11 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   // Global prefix for all API routes
   // Reason: keeps API routes namespaced, easier to proxy from Next.js
