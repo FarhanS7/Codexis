@@ -9,10 +9,21 @@ datasource db {
   provider = "postgresql"
 }
 
-// Placeholder model — will be replaced in Task 2.1.7
-// Prisma requires at least one model to generate the client
-model Placeholder {
-  id String @id @default(cuid())
+// User authenticated via GitHub OAuth
+// githubId is the immutable GitHub user ID — used as the unique key
+// accessToken is stored encrypted with AES-256-GCM (see CryptoService)
+model User {
+  id          String   @id @default(cuid())
+  githubId    String   @unique              // GitHub's numeric user ID (immutable)
+  login       String                        // GitHub username (can change)
+  avatarUrl   String?                       // GitHub avatar URL (nullable)
+  accessToken String                        // AES-256-GCM encrypted GitHub OAuth token
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt           // Auto-updated on every save
 
-  @@map("placeholder")
+  // Relations (added in later tasks)
+  // reviews    Review[]
+  // comments   ReviewComment[]
+
+  @@map("users")                            // Table name in Postgres
 }
