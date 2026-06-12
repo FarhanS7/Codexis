@@ -36,6 +36,3 @@ Thumbs.db
 *.md
 **/*.md
 
-# Exclude README.md files specifically so repo readme remains tracked
-!README.md
-!**/README.md
