@@ -1,0 +1,11 @@
+{
+  "name": "shared",
+  "version": "0.0.0",
+  "private": true,
+  "types": "./index.ts",
+  "exports": {
+    "./review": "./review.ts",
+    "./metrics": "./metrics.ts",
+    "./github": "./github.ts"
+  }
+}
