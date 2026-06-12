@@ -36,3 +36,7 @@ Thumbs.db
 *.md
 **/*.md
 
+# Agent internal files
+.agents/
+
+
