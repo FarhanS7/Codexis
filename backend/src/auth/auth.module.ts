@@ -16,10 +16,10 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
     // Using registerAsync (not register) is required to inject ConfigService
     JwtModule.registerAsync({
       imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService): import('@nestjs/jwt').JwtModuleOptions => ({
         secret: configService.getOrThrow<string>('JWT_SECRET'),
         signOptions: {
-          expiresIn: configService.get<string>('JWT_EXPIRES_IN') ?? '7d',
+          expiresIn: (configService.get<string>('JWT_EXPIRES_IN') ?? '7d') as any,
         },
       }),
       inject: [ConfigService],
