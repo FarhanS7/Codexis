@@ -1,18 +1,38 @@
-export type Severity = 'info' | 'warning' | 'error';
+export type Severity = 'bug' | 'style' | 'security' | 'performance';
 
-export type ReviewStatus = 'pending' | 'completed' | 'failed';
+export type ReviewStatus = 'idle' | 'streaming' | 'complete' | 'error';
 
 export interface Suggestion {
-  id: string;
-  filePath: string;
-  lineNumber: number;
-  originalCode: string;
-  suggestedCode: string;
-  comment: string;
+  file: string;
+  line: number;
   severity: Severity;
+  body: string;
+  dedupeKey: string; // "${file}:${line}:${severity}"
+  accepted?: boolean;
+  dismissed?: boolean;
 }
 
-export interface SseEvent {
-  event: string;
-  data: any;
+export interface SseTokenEvent {
+  type: 'token';
+  content: string;
 }
+
+export interface SseSuggestionsEvent {
+  type: 'suggestions';
+  suggestions: Suggestion[];
+}
+
+export interface SseCompleteEvent {
+  type: 'complete';
+}
+
+export interface SseErrorEvent {
+  type: 'error';
+  message: string;
+}
+
+export type SseEvent =
+  | SseTokenEvent
+  | SseSuggestionsEvent
+  | SseCompleteEvent
+  | SseErrorEvent;
