@@ -35,6 +35,8 @@ import { firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
 import { CacheService } from './cache.service';
 import { Repo, GitHubRepoResponse, PR, GitHubPRResponse } from './github.types';
+import { ParsedDiff } from './diff.types';
+import { DiffParserService } from './diff-parser.service';
 
 // Single place to tune the cache TTL
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds
@@ -59,6 +61,7 @@ export class GithubService {
   constructor(
     private readonly http: HttpService,
     private readonly cache: CacheService,
+    private readonly diffParser: DiffParserService,
   ) {
     // ── Request Interceptor ─────────────────────────────────────────────
     this.http.axiosRef.interceptors.request.use((config) => {
@@ -280,4 +283,149 @@ export class GithubService {
       base: { sha: raw.base.sha, ref: raw.base.ref },
     };
   }
+
+  /**
+   * Fetch the raw unified diff string from GitHub.
+   */
+  async getPRDiff(
+    accessToken: string,
+    owner: string,
+    repo: string,
+    prNumber: number,
+  ): Promise<string> {
+    const response = await firstValueFrom(
+      this.http.get<string>(`/repos/${owner}/${repo}/pulls/${prNumber}`, {
+        headers: {
+          'x-github-token': accessToken,
+          Accept: 'application/vnd.github.v3.diff', // Request raw unified diff format
+        },
+        responseType: 'text', // Instruct Axios not to attempt JSON parsing
+      }),
+    );
+    return response.data;
+  }
+
+  /**
+   * Fetch the raw text content of a file at a specific git ref (commit SHA).
+   * Decodes from base64 and strips newlines inserted by GitHub.
+   */
+  async getFileContent(
+    accessToken: string,
+    owner: string,
+    repo: string,
+    filePath: string,
+    ref: string,
+  ): Promise<string> {
+    const cacheKey = `content:${owner}/${repo}/${filePath}@${ref}`;
+    const cached = this.cache.get<string>(cacheKey);
+    if (cached !== null) {
+      this.logger.debug(`Cache HIT: ${cacheKey}`);
+      return cached;
+    }
+
+    this.logger.debug(`Cache MISS: ${cacheKey} — fetching file contents`);
+
+    try {
+      const response = await firstValueFrom(
+        this.http.get<{ content: string; encoding: string }>(
+          `/repos/${owner}/${repo}/contents/${filePath}`,
+          {
+            headers: { 'x-github-token': accessToken },
+            params: { ref },
+          },
+        ),
+      );
+
+      // Strip newlines and decode base64
+      const base64Clean = response.data.content.replace(/\n/g, '');
+      const content = Buffer.from(base64Clean, 'base64').toString('utf-8');
+
+      // Cache it (5 min TTL)
+      this.cache.set(cacheKey, content, 5 * 60 * 1000);
+      return content;
+    } catch (error: any) {
+      if (error?.response?.status === 404) {
+        this.logger.debug(`File not found at ref ${ref}: ${filePath} — treating as new file`);
+        return '';
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch, parse, and reconstruct a PR diff as structured ParsedDiff JSON.
+   */
+  async getFullParsedDiff(
+    userId: string,
+    accessToken: string,
+    owner: string,
+    repo: string,
+    prNumber: number,
+  ): Promise<ParsedDiff> {
+    // 1. Get PR metadata for base/head SHAs
+    const pr = await this.getPRMetadata(userId, accessToken, owner, repo, prNumber);
+    const headSha = pr.head.sha;
+    const baseSha = pr.base.sha;
+
+    // 2. Check cache
+    const cacheKey = `parseddiff:${owner}/${repo}/${headSha}`;
+    const cached = this.cache.get<ParsedDiff>(cacheKey);
+    if (cached) {
+      this.logger.debug(`Cache HIT: ${cacheKey}`);
+      return cached;
+    }
+
+    this.logger.debug(`Cache MISS: ${cacheKey} — fetching and parsing diff`);
+
+    // 3. Fetch raw unified diff
+    const rawDiff = await this.getPRDiff(accessToken, owner, repo, prNumber);
+
+    // 4. Parse unified diff
+    const parsedFiles = this.diffParser.parse(rawDiff);
+
+    // 5 & 6. Fetch base contents and reconstruct modified file
+    for (const file of parsedFiles) {
+      if (file.changeType === 'binary') continue;
+
+      if (file.changeType === 'deleted') {
+        const originalContent = await this.getFileContent(
+          accessToken,
+          owner,
+          repo,
+          file.filePath,
+          baseSha,
+        );
+        file.originalLines = originalContent ? originalContent.split('\n') : [];
+        continue;
+      }
+
+      // Fetch base content (returns '' if file is new)
+      const originalContent = await this.getFileContent(
+        accessToken,
+        owner,
+        repo,
+        file.filePath,
+        baseSha,
+      );
+      file.originalLines = originalContent ? originalContent.split('\n') : [];
+
+      // Reconstruct using two-pointer algorithm
+      file.modifiedLines = this.diffParser.reconstructModifiedFile(
+        originalContent,
+        file.hunks,
+      );
+    }
+
+    // 7. Cache & Return
+    const result: ParsedDiff = {
+      files: parsedFiles,
+      prNumber,
+      headSha,
+      baseSha,
+    };
+
+    this.cache.set(cacheKey, result, 5 * 60 * 1000); // 5-minute TTL
+    return result;
+  }
 }
+

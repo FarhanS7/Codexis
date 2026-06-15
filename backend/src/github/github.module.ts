@@ -5,6 +5,7 @@ import { GithubService } from './github.service';
 import { GithubController } from './github.controller';
 import { CacheService } from './cache.service';
 import { AuthModule } from '../auth/auth.module';
+import { DiffParserService } from './diff-parser.service';
 
 @Module({
   imports: [
@@ -20,7 +21,8 @@ import { AuthModule } from '../auth/auth.module';
     AuthModule, // Provides JwtAuthGuard and AuthService (for token decryption)
   ],
   controllers: [GithubController],
-  providers: [GithubService, CacheService],
+  providers: [GithubService, CacheService, DiffParserService],
   exports: [GithubService], // ReviewModule (Task 5.1) imports this
 })
 export class GithubModule {}
+

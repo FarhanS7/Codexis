@@ -11,6 +11,7 @@ import type { RequestUser } from '../auth/strategies/jwt.strategy';
 import { GithubService } from './github.service';
 import { AuthService } from '../auth/auth.service';
 import { Repo, PR } from './github.types';
+import { ParsedDiff } from './diff.types';
 
 @Controller('github')
 @UseGuards(JwtAuthGuard) // All routes in this controller require a valid JWT
@@ -67,4 +68,26 @@ export class GithubController {
       prNumber,
     );
   }
+
+  /**
+   * GET /api/github/repos/:owner/:repo/pulls/:prNumber/diff
+   * Returns parsed and reconstructed pull request diff data.
+   */
+  @Get('repos/:owner/:repo/pulls/:prNumber/diff')
+  async getPRDiff(
+    @CurrentUser() user: RequestUser,
+    @Param('owner') owner: string,
+    @Param('repo') repo: string,
+    @Param('prNumber', ParseIntPipe) prNumber: number,
+  ): Promise<ParsedDiff> {
+    const token = await this.authService.getDecryptedAccessToken(user.userId);
+    return this.githubService.getFullParsedDiff(
+      user.userId,
+      token,
+      owner,
+      repo,
+      prNumber,
+    );
+  }
 }
+
