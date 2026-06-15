@@ -24,6 +24,18 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+
+  webpack: (config, { isServer }) => {
+    // Monaco Editor's language service workers attempt to import Node.js 'fs'
+    // to load additional grammar files. Setting fs: false shims this for browser builds.
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+      };
+    }
+    return config;
+  },
 };
 
 export default nextConfig;
