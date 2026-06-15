@@ -9,6 +9,20 @@ datasource db {
   provider = "postgresql"
 }
 
+enum ReviewStatus {
+  PENDING
+  STREAMING
+  COMPLETE
+  ERROR
+}
+
+enum Severity {
+  bug
+  style
+  security
+  performance
+}
+
 // User authenticated via GitHub OAuth
 // githubId is the immutable GitHub user ID — used as the unique key
 // accessToken is stored encrypted with AES-256-GCM (see CryptoService)
@@ -21,9 +35,61 @@ model User {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt           // Auto-updated on every save
 
-  // Relations (added in later tasks)
-  // reviews    Review[]
-  // comments   ReviewComment[]
+  // Relations
+  reviews     Review[]
 
   @@map("users")                            // Table name in Postgres
+}
+
+model PromptVersion {
+  id                 String    @id @default(cuid())
+  version            Int       @unique       // Monotonically increasing version number
+  systemPrompt       String                  // System message sent to LLM
+  userPromptTemplate String                  // User prompt with {{DIFF_CHUNK}} placeholder
+  isActive           Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+
+  // Relations
+  reviews            Review[]
+
+  @@map("prompt_versions")
+}
+
+model Review {
+  id               String       @id @default(cuid())
+  createdAt        DateTime     @default(now())
+  status           ReviewStatus @default(PENDING)
+  model            String                    // LLM model used (e.g., "gpt-4o")
+  tokensUsed       Int          @default(0)  // Total tokens (input + output)
+  estimatedCostUsd Float        @default(0)  // Estimated USD cost
+  latencyMs        Int          @default(0)  // End-to-end latency in ms
+
+  // Foreign keys
+  userId           String
+  prId             String
+  promptVersionId  String
+
+  // Relations
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promptVersion    PromptVersion @relation(fields: [promptVersionId], references: [id])
+  comments         ReviewComment[]
+
+  @@map("reviews")
+}
+
+model ReviewComment {
+  id          String   @id @default(cuid())
+  filePath    String                         // File path the comment targets
+  line        Int                            // Line number in the modified file
+  severity    Severity                       // bug | style | security | performance
+  body        String                         // Comment text / suggestion body
+  accepted    Boolean  @default(false)       // User accepted this suggestion
+  dismissed   Boolean  @default(false)       // User dismissed this suggestion
+  postedToGh  Boolean  @default(false)       // Has been posted as a GitHub PR review comment
+  reviewId    String
+
+  // Relations
+  review      Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  @@map("review_comments")
 }
