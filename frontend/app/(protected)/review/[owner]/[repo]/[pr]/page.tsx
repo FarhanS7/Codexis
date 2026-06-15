@@ -2,12 +2,15 @@
 
 import { useRef, useState, useEffect, use } from 'react';
 import type { editor } from 'monaco-editor';
-import type { Monaco } from '@monaco-editor/react';
 import { useParsedDiff } from '@/hooks/use-parsed-diff';
 import { FileTree } from '@/components/file-tree';
 import { MonacoDiffEditorWrapper } from '@/components/monaco-diff-editor-wrapper';
 import { getMonacoLanguage } from '@/lib/language-map';
 import { EditorErrorBoundary } from '@/components/editor/EditorErrorBoundary';
+import { useReviewStream } from '@/hooks/use-review-stream';
+import { SuggestionsPanel } from '@/components/suggestions-panel';
+import type { Suggestion } from '@/types/review';
+
 
 // ─── Route Params ─────────────────────────────────────────────────────────────
 
@@ -23,6 +26,52 @@ export default function ReviewPage({ params }: ReviewPageParams) {
 
   // ── Data ──────────────────────────────────────────────────────────────────
   const { parsedDiff, loading, error } = useParsedDiff(owner, repo, pr);
+
+  // ── AI Review Stream Hook ──────────────────────────────────────────────────
+  const {
+    suggestions,
+    status,
+    tokenBuffer,
+    errorMessage,
+    startReview,
+    setSuggestions,
+  } = useReviewStream(owner, repo, pr);
+
+  // ── Suggestions Callbacks ──────────────────────────────────────────────────
+  const handleAcceptSuggestion = (key: string) => {
+    setSuggestions((prev) =>
+      prev.map((s) =>
+        s.dedupeKey === key ? { ...s, accepted: true, dismissed: false } : s,
+      ),
+    );
+  };
+
+  const handleDismissSuggestion = (key: string) => {
+    setSuggestions((prev) =>
+      prev.map((s) =>
+        s.dedupeKey === key ? { ...s, dismissed: !s.dismissed, accepted: false } : s,
+      ),
+    );
+  };
+
+  const handleSuggestionClick = (suggestion: Suggestion) => {
+    if (!parsedDiff) return;
+    const fileIndex = parsedDiff.files.findIndex(
+      (f) => f.filePath === suggestion.file,
+    );
+    if (fileIndex !== -1 && fileIndex !== activeFileIndex) {
+      setActiveFileIndex(fileIndex);
+    }
+
+    setTimeout(() => {
+      if (editorRef.current) {
+        const modifiedEditor = editorRef.current.getModifiedEditor();
+        modifiedEditor.revealLineInCenter(suggestion.line);
+        modifiedEditor.setPosition({ lineNumber: suggestion.line, column: 1 });
+        modifiedEditor.focus();
+      }
+    }, 100);
+  };
 
   // ── UI State ──────────────────────────────────────────────────────────────
   // Index into parsedDiff.files — drives which file's diff is shown in Monaco
@@ -42,7 +91,6 @@ export default function ReviewPage({ params }: ReviewPageParams) {
 
   const handleEditorMount = (
     mountedEditor: editor.IStandaloneDiffEditor,
-    _monaco: Monaco,
   ) => {
     editorRef.current = mountedEditor;
   };
@@ -144,6 +192,7 @@ export default function ReviewPage({ params }: ReviewPageParams) {
             files={parsedDiff.files}
             activeIndex={safeIndex}
             onSelect={setActiveFileIndex}
+            filesWithSuggestions={new Set(suggestions.map((s) => s.file))}
           />
         </div>
 
@@ -159,21 +208,18 @@ export default function ReviewPage({ params }: ReviewPageParams) {
           </EditorErrorBoundary>
         </div>
 
-        {/* Right panel: AI suggestions (placeholder — Task 5.2) ──────── */}
-        <div className="w-80 shrink-0 border-l border-zinc-800 bg-zinc-900 flex flex-col">
-          <div className="px-4 py-3 border-b border-zinc-800 bg-zinc-950/40">
-            <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
-              AI Suggestions
-            </span>
-          </div>
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center px-6 space-y-2">
-              <p className="text-zinc-500 text-sm font-medium">Suggestions panel</p>
-              <p className="text-zinc-600 text-xs mt-1">
-                Implement in Task 5.2
-              </p>
-            </div>
-          </div>
+        {/* Right panel: AI suggestions ─────────────────────────────── */}
+        <div className="w-80 shrink-0">
+          <SuggestionsPanel
+            suggestions={suggestions}
+            status={status}
+            tokenBuffer={tokenBuffer}
+            errorMessage={errorMessage}
+            onAccept={handleAcceptSuggestion}
+            onDismiss={handleDismissSuggestion}
+            onSuggestionClick={handleSuggestionClick}
+            startReview={startReview}
+          />
         </div>
 
       </div>
