@@ -1,5 +1,5 @@
 import { DiffParserService } from './diff-parser.service';
-import { Hunk } from './diff.types';
+import { Hunk, HunkLine } from './diff.types';
 import {
   MODIFIED_FILE_DIFF,
   NEW_FILE_DIFF,
@@ -321,16 +321,16 @@ describe('DiffParserService', () => {
           originalCount: 100,
           modifiedStart: 100,
           modifiedCount: 100,
-          lines: Array.from({ length: 100 }, (_, i) => ({
+          lines: (Array.from({ length: 100 }, (_, i) => ({
             type: 'added' as const,
             content: `const new${i + 100} = ${i + 101};`,
             modifiedLineNum: 100 + i,
-          })).concat(
+          })) as HunkLine[]).concat(
             Array.from({ length: 100 }, (_, i) => ({
               type: 'deleted' as const,
               content: `const old${i + 100} = ${i + 100};`,
               originalLineNum: 100 + i,
-            })),
+            })) as HunkLine[],
           ),
         },
       ];
