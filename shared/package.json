@@ -4,6 +4,7 @@
   "private": true,
   "types": "./index.ts",
   "exports": {
+    ".": "./index.ts",
     "./review": "./review.ts",
     "./metrics": "./metrics.ts",
     "./github": "./github.ts"
