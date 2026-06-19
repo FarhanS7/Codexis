@@ -39,4 +39,6 @@ Thumbs.db
 # Agent internal files
 .agents/
 
+# Template files
+template.html
 

@@ -3,8 +3,7 @@
 import { formatDistanceToNow } from 'date-fns';
 import type { Repo } from '@/types/github';
 
-// Subset of GitHub's language color palette mapped to Tailwind bg classes.
-// Add languages as needed; the 'default' key is the fallback.
+// Subset of GitHub's language color palette.
 const LANGUAGE_COLORS: Record<string, string> = {
   TypeScript:  'bg-blue-500',
   JavaScript:  'bg-yellow-400',
@@ -21,7 +20,7 @@ const LANGUAGE_COLORS: Record<string, string> = {
   Shell:       'bg-green-600',
   HTML:        'bg-orange-400',
   CSS:         'bg-blue-300',
-  default:     'bg-gray-500',
+  default:     'bg-neutral-500',
 };
 
 interface RepoCardProps {
@@ -37,28 +36,28 @@ export function RepoCard({ repo, isSelected, onSelect }: RepoCardProps) {
   return (
     <button
       onClick={() => onSelect({ owner: repo.owner, name: repo.name })}
-      className={`w-full text-left p-4 rounded-lg border transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500/50 ${
+      className={`w-full text-left p-4 rounded-xl border transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-violet-500/30 group ${
         isSelected
-          ? 'border-blue-500 bg-blue-500/10'
-          : 'border-gray-800 bg-gray-900 hover:border-gray-600 hover:bg-gray-800'
+          ? 'border-violet-500/50 bg-violet-500/[0.08] shadow-lg shadow-violet-500/5'
+          : 'border-white/5 bg-neutral-900/30 hover:border-white/10 hover:bg-white/[0.03]'
       }`}
       aria-pressed={isSelected}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-white text-sm truncate">
+            <span className="font-medium text-white text-sm truncate group-hover:text-white/90">
               {repo.name}
             </span>
             {repo.isPrivate && (
-              <span className="text-xs text-gray-400 border border-gray-700 rounded px-1.5 py-0.5 shrink-0 leading-none">
+              <span className="text-[10px] text-neutral-500 border border-white/10 rounded-full px-2 py-0.5 shrink-0 leading-none font-medium">
                 Private
               </span>
             )}
           </div>
 
           {repo.description && (
-            <p className="text-gray-400 text-xs mt-1 line-clamp-2 leading-relaxed">
+            <p className="text-neutral-500 text-xs mt-1 line-clamp-2 leading-relaxed">
               {repo.description}
             </p>
           )}
@@ -67,16 +66,15 @@ export function RepoCard({ repo, isSelected, onSelect }: RepoCardProps) {
 
       <div className="flex items-center gap-3 mt-3">
         {repo.language && (
-          <span className="flex items-center gap-1.5 text-xs text-gray-400">
+          <span className="flex items-center gap-1.5 text-xs text-neutral-500">
             <span
-              className={`w-2.5 h-2.5 rounded-full shrink-0 ${langColor}`}
+              className={`w-2 h-2 rounded-full shrink-0 ${langColor}`}
               aria-hidden="true"
             />
             {repo.language}
           </span>
         )}
-        <span className="text-xs text-gray-500">
-          Updated{' '}
+        <span className="text-xs text-neutral-600">
           {formatDistanceToNow(new Date(repo.updatedAt), { addSuffix: true })}
         </span>
       </div>
