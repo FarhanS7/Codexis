@@ -75,6 +75,8 @@ model Review {
   promptVersion    PromptVersion @relation(fields: [promptVersionId], references: [id])
   comments         ReviewComment[]
 
+  @@index([userId, createdAt])
+  @@index([createdAt])
   @@map("reviews")
 }
 
@@ -92,6 +94,7 @@ model ReviewComment {
   // Relations
   review      Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 
+  @@index([reviewId, accepted])
   @@map("review_comments")
 }
 
