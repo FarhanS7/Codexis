@@ -1,6 +1,6 @@
 'use client';
 
-import type { Suggestion, Severity } from '../types/review';
+import type { ClientSuggestion, Severity } from '../types/review';
 
 // ─── Constants & Color Maps ──────────────────────────────────────────────────
 
@@ -69,7 +69,7 @@ function SeverityIcon({ severity }: { severity: Severity }) {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface SuggestionCardProps {
-  suggestion: Suggestion;
+  suggestion: ClientSuggestion;
   onAccept: (e: React.MouseEvent) => void;
   onDismiss: (e: React.MouseEvent) => void;
   onClick: () => void;
@@ -83,7 +83,7 @@ export function SuggestionCard({
   onDismiss,
   onClick,
 }: SuggestionCardProps) {
-  const { file, line, severity, body, accepted, dismissed } = suggestion;
+  const { file, line, severity, body, accepted, dismissed, posted, pending } = suggestion;
   const config = SEVERITY_CONFIG[severity] ?? SEVERITY_CONFIG.style;
 
   // Extract only filename from the path for the chip label
@@ -95,11 +95,11 @@ export function SuggestionCard({
       onClick={onClick}
       className={`
         group relative rounded-xl border border-white/5 bg-neutral-900/30
-
         transition-all duration-200 ease-out cursor-pointer hover:border-white/10
         ${config.borderClass}
         ${dismissed ? 'opacity-40' : ''}
         ${accepted ? 'ring-1 ring-emerald-500/20' : ''}
+        ${pending ? 'opacity-70 pointer-events-none' : ''}
       `}
     >
       {/* Hover highlight */}
@@ -133,53 +133,71 @@ export function SuggestionCard({
         </p>
 
         {/* Action Panel */}
-        <div className="mt-3 flex items-center justify-end gap-2 border-t border-white/5 pt-2.5">
-          {accepted ? (
-            <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-semibold bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
-              <svg
-                className="w-3.5 h-3.5 shrink-0"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
-              Accepted
+        <div className="mt-3 flex items-center justify-end gap-2 border-t border-white/5 pt-2.5 min-h-[28px]">
+          {posted ? (
+            <div className="flex items-center gap-1 text-[10px] text-zinc-500 font-bold bg-white/[0.03] border border-white/5 px-2.5 py-0.5 rounded-full select-none tracking-wide">
+              ↑ Posted to GitHub
+            </div>
+          ) : accepted ? (
+            <div className="flex items-center gap-1 text-[10px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/25 px-2.5 py-0.5 rounded-full select-none tracking-wide">
+              {pending ? (
+                <div className="w-2.5 h-2.5 border border-emerald-900 border-t-emerald-400 rounded-full animate-spin shrink-0 mr-0.5" />
+              ) : (
+                '✓'
+              )}
+              {pending ? 'Accepting...' : 'Accepted'}
+            </div>
+          ) : dismissed ? (
+            <div className="flex items-center gap-1 text-[10px] text-zinc-400 font-bold bg-white/5 border border-white/5 px-2.5 py-0.5 rounded-full select-none tracking-wide">
+              {pending && (
+                <div className="w-2.5 h-2.5 border border-zinc-700 border-t-zinc-400 rounded-full animate-spin shrink-0 mr-0.5" />
+              )}
+              Dismissed
+              {!pending && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDismiss(e);
+                  }}
+                  className="ml-1 text-[9px] hover:text-white underline tracking-wide"
+                >
+                  Undo
+                </button>
+              )}
             </div>
           ) : (
             <>
               <button
+                disabled={pending}
                 onClick={(e) => {
                   e.stopPropagation();
                   onDismiss(e);
                 }}
                 className={`
-                  px-2.5 py-1 text-[11px] font-medium rounded-full transition-all duration-200
-                  ${
-                    dismissed
-                      ? 'bg-white/[0.06] text-neutral-300 hover:bg-white/[0.08]'
-                      : 'border border-white/5 text-neutral-500 hover:bg-white/[0.04] hover:text-neutral-300'
-                  }
+                  px-2.5 py-1 text-[10px] font-bold rounded-full transition-all duration-200
+                  border border-white/5 text-neutral-500 hover:bg-white/[0.04] hover:text-neutral-300
+                  ${pending ? 'opacity-50 cursor-not-allowed' : ''}
                 `}
               >
-                {dismissed ? 'Undo' : 'Dismiss'}
+                Dismiss
               </button>
-              {!dismissed && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onAccept(e);
-                  }}
-                  className="px-2.5 py-1 text-[11px] font-medium bg-emerald-600 hover:bg-emerald-500 text-white rounded-full transition-all duration-200 shadow-sm shadow-emerald-900/20"
-                >
-                  Accept
-                </button>
-              )}
+              <button
+                disabled={pending}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAccept(e);
+                }}
+                className={`
+                  px-2.5 py-1 text-[10px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-full transition-all duration-200 shadow-sm shadow-emerald-900/20
+                  ${pending ? 'opacity-50 cursor-not-allowed' : ''}
+                `}
+              >
+                {pending ? (
+                  <div className="w-2.5 h-2.5 border border-emerald-950 border-t-white rounded-full animate-spin" />
+                ) : (
+                  'Accept'
+                )}
+              </button>
             </>
           )}
         </div>

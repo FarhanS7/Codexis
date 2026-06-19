@@ -10,10 +10,12 @@ import { getMonacoLanguage } from '@/lib/language-map';
 import { EditorErrorBoundary } from '@/components/editor/EditorErrorBoundary';
 import { useReviewStream } from '@/hooks/use-review-stream';
 import { SuggestionsPanel } from '@/components/suggestions-panel';
-import type { Suggestion } from '@/types/review';
+import type { ClientSuggestion } from '@/types/review';
 import { useMonacoDecorations } from '@/hooks/use-monaco-decorations';
 import { useContentWidgets } from '@/hooks/use-content-widgets';
 import { useEditorPanelSync, scrollEditorToSuggestion } from '@/hooks/use-editor-panel-sync';
+import { useAcceptDismiss } from '@/hooks/use-accept-dismiss';
+import { ToastProvider } from '@/contexts/ToastContext';
 
 // ─── Route Params ─────────────────────────────────────────────────────────────
 
@@ -21,9 +23,19 @@ type ReviewPageParams = {
   params: Promise<{ owner: string; repo: string; pr: string }>;
 };
 
-// ─── Page Component ───────────────────────────────────────────────────────────
+// ─── Page Component Wrapper (Provides ToastContext) ───────────────────────────
 
 export default function ReviewPage({ params }: ReviewPageParams) {
+  return (
+    <ToastProvider>
+      <ReviewPageContent params={params} />
+    </ToastProvider>
+  );
+}
+
+// ─── Inner Page Content ─────────────────────────────────────────────────────────
+
+function ReviewPageContent({ params }: ReviewPageParams) {
   // Unwrap the async params Promise — Next.js 15 dynamic params are async
   const { owner, repo, pr } = use(params);
 
@@ -38,7 +50,23 @@ export default function ReviewPage({ params }: ReviewPageParams) {
     errorMessage,
     startReview,
     setSuggestions,
+    reviewId,
   } = useReviewStream(owner, repo, pr);
+
+  // ── Accept/Dismiss & Post Mutation Hook ────────────────────────────────────
+  const {
+    handleAccept,
+    handleDismiss,
+    handlePostToGitHub,
+    postStatus,
+  } = useAcceptDismiss(
+    suggestions,
+    setSuggestions,
+    reviewId,
+    owner,
+    repo,
+    pr,
+  );
 
   // ── UI State ──────────────────────────────────────────────────────────────
   // Index into parsedDiff.files — drives which file's diff is shown in Monaco
@@ -82,20 +110,8 @@ export default function ReviewPage({ params }: ReviewPageParams) {
     suggestions,
     activeFile?.filePath ?? '',
     activeFile?.modifiedLineMap,
-    (key) => {
-      setSuggestions((prev) =>
-        prev.map((s) =>
-          s.dedupeKey === key ? { ...s, accepted: true, dismissed: false } : s,
-        ),
-      );
-    },
-    (key) => {
-      setSuggestions((prev) =>
-        prev.map((s) =>
-          s.dedupeKey === key ? { ...s, dismissed: !s.dismissed, accepted: false } : s,
-        ),
-      );
-    },
+    handleAccept,
+    handleDismiss,
   );
 
   useEditorPanelSync({
@@ -108,22 +124,14 @@ export default function ReviewPage({ params }: ReviewPageParams) {
 
   // ── Suggestions Callbacks ──────────────────────────────────────────────────
   const handleAcceptSuggestion = (key: string) => {
-    setSuggestions((prev) =>
-      prev.map((s) =>
-        s.dedupeKey === key ? { ...s, accepted: true, dismissed: false } : s,
-      ),
-    );
+    handleAccept(key);
   };
 
   const handleDismissSuggestion = (key: string) => {
-    setSuggestions((prev) =>
-      prev.map((s) =>
-        s.dedupeKey === key ? { ...s, dismissed: !s.dismissed, accepted: false } : s,
-      ),
-    );
+    handleDismiss(key);
   };
 
-  const handleSuggestionClick = (suggestion: Suggestion) => {
+  const handleSuggestionClick = (suggestion: ClientSuggestion) => {
     if (!parsedDiff) return;
     const fileIndex = parsedDiff.files.findIndex(
       (f) => f.filePath === suggestion.file,
@@ -197,7 +205,6 @@ export default function ReviewPage({ params }: ReviewPageParams) {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-
   return (
     <div className="flex flex-col h-[calc(100vh-57px)] bg-zinc-950">
 
@@ -263,6 +270,8 @@ export default function ReviewPage({ params }: ReviewPageParams) {
             onDismiss={handleDismissSuggestion}
             onSuggestionClick={handleSuggestionClick}
             startReview={startReview}
+            onPostToGitHub={handlePostToGitHub}
+            postStatus={postStatus}
           />
         </div>
 
@@ -270,3 +279,4 @@ export default function ReviewPage({ params }: ReviewPageParams) {
     </div>
   );
 }
+

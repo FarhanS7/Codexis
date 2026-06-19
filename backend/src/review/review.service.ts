@@ -1,4 +1,11 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { GithubService } from '../github/github.service';
 import { DiffParserService } from '../github/diff-parser.service';
@@ -17,6 +24,8 @@ import {
   ValidatedSuggestion,
   SseEvent,
   ReviewMetrics,
+  CommentActionResponse,
+  PostToGithubResponse,
 } from './review.types';
 
 @Injectable()
@@ -216,7 +225,7 @@ export class ReviewService {
     const latencyMs = Date.now() - startTime;
     const estimatedCostUsd = (totalTokens / 1_000_000) * 5.0; // GPT-4o estimate
 
-    const review = await this.saveReview(userId, String(pr.id), deduped, {
+    const { review, comments } = await this.saveReview(userId, String(pr.id), deduped, {
       tokensUsed: totalTokens,
       estimatedCostUsd,
       latencyMs,
@@ -230,7 +239,14 @@ export class ReviewService {
 
     // 10. Signal completion
     subscriber.next({
-      data: JSON.stringify({ type: 'complete' }),
+      data: JSON.stringify({
+        type: 'complete',
+        reviewId: review.id,
+        comments: comments.map((c) => ({
+          id: c.id,
+          dedupeKey: `${c.filePath}:${c.line}:${c.severity}`,
+        })),
+      }),
     });
     subscriber.complete();
   }
@@ -270,6 +286,7 @@ export class ReviewService {
         },
       });
 
+      let comments: any[] = [];
       if (suggestions.length > 0) {
         await tx.reviewComment.createMany({
           data: suggestions.map((s) => ({
@@ -280,9 +297,170 @@ export class ReviewService {
             body: s.body,
           })),
         });
+
+        comments = await tx.reviewComment.findMany({
+          where: { reviewId: review.id },
+          select: {
+            id: true,
+            filePath: true,
+            line: true,
+            severity: true,
+          },
+        });
       }
 
-      return review;
+      return { review, comments };
     });
+  }
+
+  async acceptComment(commentId: string, userId: string): Promise<CommentActionResponse> {
+    const comment = await this.prisma.reviewComment.findFirst({
+      where: { id: commentId },
+      include: { review: { select: { userId: true } } },
+    });
+
+    if (!comment) {
+      throw new NotFoundException(`Comment with ID "${commentId}" not found.`);
+    }
+
+    if (comment.review.userId !== userId) {
+      throw new ForbiddenException('You do not have permission to modify this comment.');
+    }
+
+    const updated = await this.prisma.reviewComment.update({
+      where: { id: commentId },
+      data: {
+        accepted: true,
+        dismissed: false,
+      },
+    });
+
+    return {
+      id: updated.id,
+      accepted: updated.accepted,
+      dismissed: updated.dismissed,
+    };
+  }
+
+  async dismissComment(commentId: string, userId: string): Promise<CommentActionResponse> {
+    const comment = await this.prisma.reviewComment.findFirst({
+      where: { id: commentId },
+      include: { review: { select: { userId: true } } },
+    });
+
+    if (!comment) {
+      throw new NotFoundException(`Comment with ID "${commentId}" not found.`);
+    }
+
+    if (comment.review.userId !== userId) {
+      throw new ForbiddenException('You do not have permission to modify this comment.');
+    }
+
+    const updated = await this.prisma.reviewComment.update({
+      where: { id: commentId },
+      data: {
+        accepted: false,
+        dismissed: true,
+      },
+    });
+
+    return {
+      id: updated.id,
+      accepted: updated.accepted,
+      dismissed: updated.dismissed,
+    };
+  }
+
+  async postToGitHub(
+    reviewId: string,
+    userId: string,
+    owner: string,
+    repo: string,
+    prNumber: number,
+  ): Promise<PostToGithubResponse> {
+    // 1. Fetch review and unposted accepted comments
+    const review = await this.prisma.review.findFirst({
+      where: { id: reviewId, userId },
+      include: {
+        comments: {
+          where: { accepted: true, postedToGh: false },
+        },
+      },
+    });
+
+    if (!review) {
+      throw new NotFoundException(`Review with ID "${reviewId}" not found.`);
+    }
+
+    // 2. Early return if nothing to post
+    if (review.comments.length === 0) {
+      return { posted: 0, message: 'Nothing to post' };
+    }
+
+    // 3. Get user & decrypt access token
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) {
+      throw new NotFoundException(`User with ID "${userId}" not found.`);
+    }
+    const accessToken = this.cryptoService.decrypt(user.accessToken);
+
+    // 4. Fetch the latest PR metadata to get current HEAD SHA
+    const pr = await this.githubService.getPRMetadata(
+      userId,
+      accessToken,
+      owner,
+      repo,
+      prNumber,
+    );
+
+    // 5. Build and send the review payload
+    const payload = {
+      commit_id: pr.head.sha,
+      body: `AI Code Review — ${review.comments.length} comment${review.comments.length > 1 ? 's' : ''}`,
+      event: 'COMMENT' as const,
+      comments: review.comments.map((c) => ({
+        path: c.filePath,
+        line: c.line,
+        side: 'RIGHT' as const,
+        body: this.formatCommentBody(c.severity, c.body),
+      })),
+    };
+
+    const githubReview = await this.githubService.createPRReview(
+      accessToken,
+      owner,
+      repo,
+      prNumber,
+      payload,
+    );
+
+    // 6. Mark comments as posted in a transaction
+    const commentIds = review.comments.map((c) => c.id);
+    await this.prisma.$transaction(
+      commentIds.map((id) =>
+        this.prisma.reviewComment.update({
+          where: { id },
+          data: { postedToGh: true },
+        }),
+      ),
+    );
+
+    return {
+      posted: review.comments.length,
+      githubReviewId: githubReview.id,
+    };
+  }
+
+  private formatCommentBody(severity: string, body: string): string {
+    const prefixes: Record<string, string> = {
+      bug: '🔴 **Bug**',
+      security: '🟠 **Security**',
+      performance: '🟡 **Performance**',
+      style: '🔵 **Style**',
+    };
+    const prefix = prefixes[severity] ?? '💬 **Note**';
+    return `${prefix}: ${body}\n\n*Generated by AI Code Reviewer*`;
   }
 }

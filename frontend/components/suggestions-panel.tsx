@@ -1,20 +1,22 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
-import type { Suggestion, ReviewStatus } from '../types/review';
+import type { ClientSuggestion, ReviewStatus, PostStatus } from '../types/review';
 import { SuggestionCard } from './suggestion-card';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface SuggestionsPanelProps {
-  suggestions: Suggestion[];
+  suggestions: ClientSuggestion[];
   status: ReviewStatus;
   tokenBuffer: string;
   errorMessage: string | null;
   onAccept: (dedupeKey: string) => void;
   onDismiss: (dedupeKey: string) => void;
-  onSuggestionClick: (suggestion: Suggestion) => void;
+  onSuggestionClick: (suggestion: ClientSuggestion) => void;
   startReview: () => void;
+  onPostToGitHub: () => void;
+  postStatus: PostStatus;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -28,6 +30,8 @@ export function SuggestionsPanel({
   onDismiss,
   onSuggestionClick,
   startReview,
+  onPostToGitHub,
+  postStatus,
 }: SuggestionsPanelProps) {
   const logEndRef = useRef<HTMLDivElement>(null);
   const [showConsole, setShowConsole] = useState(true);
@@ -39,8 +43,11 @@ export function SuggestionsPanel({
     }
   }, [tokenBuffer, status]);
 
-  // Derived count of accepted suggestions
+  // Derived counts
+  const totalCount = suggestions.length;
   const acceptedCount = suggestions.filter((s) => s.accepted).length;
+  const postedCount = suggestions.filter((s) => s.posted).length;
+  const unpostedAcceptedCount = suggestions.filter((s) => s.accepted && !s.posted).length;
 
   return (
     <div className="h-full flex flex-col bg-[#0A0A0A] text-neutral-100 border-l border-white/5">
@@ -50,17 +57,24 @@ export function SuggestionsPanel({
           <span className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider">
             AI Suggestions
           </span>
-          {suggestions.length > 0 && (
-            <span className="text-[10px] font-bold bg-white/[0.06] text-neutral-400 px-1.5 py-0.5 rounded-full">
-              {suggestions.length}
+          {totalCount > 0 && (
+            <span className="text-[10px] font-bold bg-white/[0.06] text-neutral-400 px-1.5 py-0.5 rounded-full" title="Total AI suggestions">
+              {totalCount}
             </span>
           )}
         </div>
-        {acceptedCount > 0 && (
-          <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
-            {acceptedCount} Accepted
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {postedCount > 0 && (
+            <span className="text-[10px] font-semibold text-neutral-400 bg-white/[0.04] border border-white/5 px-2 py-0.5 rounded-full" title="Suggestions posted to GitHub">
+              {postedCount} Posted
+            </span>
+          )}
+          {acceptedCount > 0 && (
+            <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full" title="Accepted suggestions">
+              {acceptedCount} Accepted
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Main Trigger Button Section */}
@@ -182,6 +196,41 @@ export function SuggestionsPanel({
           </div>
         )}
       </div>
+
+      {/* Footer / Post Section */}
+      {(status === 'complete' || status === 'error') && totalCount > 0 && (
+        <div className="p-4 border-t border-white/5 bg-[#080808] shrink-0">
+          <button
+            onClick={onPostToGitHub}
+            disabled={unpostedAcceptedCount === 0 || postStatus === 'posting'}
+            className={`
+              w-full py-2 px-4 rounded-full font-semibold text-xs transition-all duration-200
+              flex items-center justify-center gap-2 min-h-[36px]
+              ${
+                unpostedAcceptedCount === 0 || postStatus === 'posting'
+                  ? 'bg-white/[0.04] text-neutral-600 cursor-not-allowed border border-white/5'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/15 hover:shadow-emerald-600/25'
+              }
+            `}
+          >
+            {postStatus === 'posting' ? (
+              <>
+                <div className="w-3.5 h-3.5 border border-emerald-950 border-t-white rounded-full animate-spin shrink-0" />
+                Posting Review...
+              </>
+            ) : postStatus === 'posted' && unpostedAcceptedCount === 0 ? (
+              '✓ Posted to GitHub'
+            ) : (
+              `Post ${unpostedAcceptedCount} Accept${unpostedAcceptedCount !== 1 ? 's' : ''} to GitHub`
+            )}
+          </button>
+          {unpostedAcceptedCount === 0 && postedCount < totalCount && (
+            <p className="text-[10px] text-neutral-500 text-center mt-2">
+              Accept more suggestions to post them to GitHub.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

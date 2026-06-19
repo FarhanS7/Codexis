@@ -29,12 +29,13 @@ import {
   InternalServerErrorException,
   HttpException,
   HttpStatus,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { AxiosError } from 'axios';
 import { CacheService } from './cache.service';
-import { Repo, GitHubRepoResponse, PR, GitHubPRResponse } from './github.types';
+import { Repo, GitHubRepoResponse, PR, GitHubPRResponse, GithubCreateReviewPayload } from './github.types';
 import { ParsedDiff } from './diff.types';
 import { DiffParserService } from './diff-parser.service';
 
@@ -426,6 +427,41 @@ export class GithubService {
 
     this.cache.set(cacheKey, result, 5 * 60 * 1000); // 5-minute TTL
     return result;
+  }
+
+  /**
+   * Create a pull request review on GitHub with comments.
+   */
+  async createPRReview(
+    accessToken: string,
+    owner: string,
+    repo: string,
+    prNumber: number,
+    payload: GithubCreateReviewPayload,
+  ): Promise<{ id: number }> {
+    try {
+      const response = await firstValueFrom(
+        this.http.post<{ id: number }>(
+          `/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
+          payload,
+          {
+            headers: {
+              'x-github-token': accessToken,
+              Accept: 'application/vnd.github.v3+json',
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      );
+      return { id: response.data.id };
+    } catch (error: any) {
+      if (error instanceof HttpException) {
+        if (error.getStatus() === HttpStatus.UNPROCESSABLE_ENTITY) {
+          throw new UnprocessableEntityException(error.message);
+        }
+      }
+      throw error;
+    }
   }
 }
 

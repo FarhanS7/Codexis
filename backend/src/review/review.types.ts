@@ -47,3 +47,16 @@ export interface ReviewMetrics {
   promptVersionId: string;
 }
 
+export interface CommentActionResponse {
+  id: string;
+  accepted: boolean;
+  dismissed: boolean;
+}
+
+export interface PostToGithubResponse {
+  posted: number;
+  githubReviewId?: number;
+  message?: string;
+}
+
+

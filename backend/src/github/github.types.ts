@@ -64,3 +64,18 @@ export interface GitHubPRResponse {
   head: { sha: string; ref: string };
   base: { sha: string; ref: string };
 }
+
+export interface GithubReviewComment {
+  path: string;
+  line: number;
+  body: string;
+  side?: 'RIGHT' | 'LEFT';
+}
+
+export interface GithubCreateReviewPayload {
+  commit_id: string;
+  body: string;
+  event: 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
+  comments: GithubReviewComment[];
+}
+
