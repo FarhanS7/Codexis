@@ -71,6 +71,7 @@ model Review {
 
   // Relations
   user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pullRequest      PullRequest   @relation(fields: [prId], references: [id], onDelete: Cascade)
   promptVersion    PromptVersion @relation(fields: [promptVersionId], references: [id])
   comments         ReviewComment[]
 
@@ -92,4 +93,34 @@ model ReviewComment {
   review      Review   @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 
   @@map("review_comments")
+}
+
+model Repository {
+  id          String    @id @default(cuid())
+  githubId    Int       @unique              // GitHub repo ID — unique index for upsert
+  name        String                         // Repository name (e.g., "hello-world")
+  owner       String                         // Repository owner (e.g., "octocat")
+  createdAt   DateTime  @default(now())
+
+  // Relations
+  pullRequests PullRequest[]
+
+  @@map("repositories")
+}
+
+model PullRequest {
+  id          String    @id @default(cuid())
+  number      Int                            // PR number (e.g., 42)
+  title       String                         // PR title
+  headSha     String                         // Latest commit SHA (updated on synchronize)
+  status      String    @default("open")     // "open" | "closed" | "merged"
+  repoId      String
+  createdAt   DateTime  @default(now())
+
+  // Relations
+  repository  Repository @relation(fields: [repoId], references: [id], onDelete: Cascade)
+  reviews     Review[]
+
+  @@unique([repoId, number])                 // Composite unique for upsert
+  @@map("pull_requests")
 }

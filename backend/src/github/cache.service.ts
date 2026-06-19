@@ -86,6 +86,25 @@ export class CacheService {
   }
 
   /**
+   * Invalidate all cache entries whose keys contain the given pattern.
+   * Used by the webhook service to clear caches matching a repo or PR.
+   */
+  invalidatePattern(pattern: string): void {
+    let count = 0;
+    for (const key of this.store.keys()) {
+      if (key.includes(pattern)) {
+        this.store.delete(key);
+        count++;
+      }
+    }
+    if (count > 0) {
+      this.logger.debug(
+        `Cache INVALIDATED ${count} entries matching pattern: "${pattern}"`,
+      );
+    }
+  }
+
+  /**
    * Wipe all cache entries. Used in unit tests to ensure clean state.
    * Not intended for production use.
    */

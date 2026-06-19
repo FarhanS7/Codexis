@@ -22,7 +22,7 @@ import { DiffParserService } from './diff-parser.service';
   ],
   controllers: [GithubController],
   providers: [GithubService, CacheService, DiffParserService],
-  exports: [GithubService, DiffParserService], // Exported for use in ReviewModule
+  exports: [GithubService, DiffParserService, CacheService], // Exported for use in ReviewModule and WebhookModule
 })
 export class GithubModule {}
 
