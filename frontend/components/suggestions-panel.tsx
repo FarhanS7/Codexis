@@ -97,7 +97,10 @@ export function SuggestionsPanel({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div
+        id="suggestions-panel-container"
+        className="flex-1 overflow-y-auto p-4 space-y-4"
+      >
         {/* Error Banner */}
         {status === 'error' && errorMessage && (
           <div className="p-3 bg-red-500/5 border border-red-500/15 rounded-xl text-red-400 text-xs">

@@ -91,9 +91,11 @@ export function SuggestionCard({
 
   return (
     <div
+      id={`suggestion-card-${suggestion.dedupeKey}`}
       onClick={onClick}
       className={`
         group relative rounded-xl border border-white/5 bg-neutral-900/30
+
         transition-all duration-200 ease-out cursor-pointer hover:border-white/10
         ${config.borderClass}
         ${dismissed ? 'opacity-40' : ''}

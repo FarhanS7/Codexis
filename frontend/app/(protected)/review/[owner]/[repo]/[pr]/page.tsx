@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, use } from 'react';
 import type { editor } from 'monaco-editor';
+import type { Monaco } from '@monaco-editor/react';
 import { useParsedDiff } from '@/hooks/use-parsed-diff';
 import { FileTree } from '@/components/file-tree';
 import { MonacoDiffEditorWrapper } from '@/components/monaco-diff-editor-wrapper';
@@ -10,7 +11,9 @@ import { EditorErrorBoundary } from '@/components/editor/EditorErrorBoundary';
 import { useReviewStream } from '@/hooks/use-review-stream';
 import { SuggestionsPanel } from '@/components/suggestions-panel';
 import type { Suggestion } from '@/types/review';
-
+import { useMonacoDecorations } from '@/hooks/use-monaco-decorations';
+import { useContentWidgets } from '@/hooks/use-content-widgets';
+import { useEditorPanelSync, scrollEditorToSuggestion } from '@/hooks/use-editor-panel-sync';
 
 // ─── Route Params ─────────────────────────────────────────────────────────────
 
@@ -36,6 +39,72 @@ export default function ReviewPage({ params }: ReviewPageParams) {
     startReview,
     setSuggestions,
   } = useReviewStream(owner, repo, pr);
+
+  // ── UI State ──────────────────────────────────────────────────────────────
+  // Index into parsedDiff.files — drives which file's diff is shown in Monaco
+  const [activeFileIndex, setActiveFileIndex] = useState(0);
+  const [monacoInstance, setMonacoInstance] = useState<Monaco | null>(null);
+
+  // Reset to first file when a new diff loads (navigating between PRs)
+  useEffect(() => {
+    if (parsedDiff) {
+      setActiveFileIndex(0);
+    }
+  }, [parsedDiff]);
+
+  // Derive active file safely (can be undefined during loading/error)
+  const safeIndex = parsedDiff ? Math.min(activeFileIndex, parsedDiff.files.length - 1) : 0;
+  const activeFile = parsedDiff?.files[safeIndex];
+
+  // ── Editor Ref ────────────────────────────────────────────────────────────
+  // Stores the IStandaloneDiffEditor instance after Monaco mounts.
+  const editorRef = useRef<editor.IStandaloneDiffEditor | null>(null);
+
+  const handleEditorMount = (
+    mountedEditor: editor.IStandaloneDiffEditor,
+    monaco: Monaco,
+  ) => {
+    editorRef.current = mountedEditor;
+    setMonacoInstance(monaco);
+  };
+
+  // ── Monaco Integration Hooks ──────────────────────────────────────────────
+  useMonacoDecorations(
+    editorRef.current,
+    monacoInstance,
+    suggestions,
+    activeFile?.filePath ?? '',
+    activeFile?.modifiedLineMap,
+  );
+
+  useContentWidgets(
+    editorRef.current,
+    suggestions,
+    activeFile?.filePath ?? '',
+    activeFile?.modifiedLineMap,
+    (key) => {
+      setSuggestions((prev) =>
+        prev.map((s) =>
+          s.dedupeKey === key ? { ...s, accepted: true, dismissed: false } : s,
+        ),
+      );
+    },
+    (key) => {
+      setSuggestions((prev) =>
+        prev.map((s) =>
+          s.dedupeKey === key ? { ...s, dismissed: !s.dismissed, accepted: false } : s,
+        ),
+      );
+    },
+  );
+
+  useEditorPanelSync({
+    editorInstance: editorRef.current,
+    monaco: monacoInstance,
+    suggestions,
+    activeFilePath: activeFile?.filePath ?? '',
+    modifiedLineMap: activeFile?.modifiedLineMap,
+  });
 
   // ── Suggestions Callbacks ──────────────────────────────────────────────────
   const handleAcceptSuggestion = (key: string) => {
@@ -64,35 +133,16 @@ export default function ReviewPage({ params }: ReviewPageParams) {
     }
 
     setTimeout(() => {
-      if (editorRef.current) {
-        const modifiedEditor = editorRef.current.getModifiedEditor();
-        modifiedEditor.revealLineInCenter(suggestion.line);
-        modifiedEditor.setPosition({ lineNumber: suggestion.line, column: 1 });
-        modifiedEditor.focus();
+      if (editorRef.current && monacoInstance) {
+        const targetFile = parsedDiff.files[fileIndex];
+        scrollEditorToSuggestion(
+          editorRef.current,
+          monacoInstance,
+          suggestion.line,
+          targetFile?.modifiedLineMap,
+        );
       }
-    }, 100);
-  };
-
-  // ── UI State ──────────────────────────────────────────────────────────────
-  // Index into parsedDiff.files — drives which file's diff is shown in Monaco
-  const [activeFileIndex, setActiveFileIndex] = useState(0);
-
-  // Reset to first file when a new diff loads (navigating between PRs)
-  useEffect(() => {
-    if (parsedDiff) {
-      setActiveFileIndex(0);
-    }
-  }, [parsedDiff]);
-
-  // ── Editor Ref ────────────────────────────────────────────────────────────
-  // Stores the IStandaloneDiffEditor instance after Monaco mounts.
-  // Used by Task 6.1 decoration hooks: editorRef.current.getModifiedEditor().deltaDecorations(...)
-  const editorRef = useRef<editor.IStandaloneDiffEditor | null>(null);
-
-  const handleEditorMount = (
-    mountedEditor: editor.IStandaloneDiffEditor,
-  ) => {
-    editorRef.current = mountedEditor;
+    }, 120);
   };
 
   // ── Loading State ─────────────────────────────────────────────────────────
@@ -138,21 +188,15 @@ export default function ReviewPage({ params }: ReviewPageParams) {
     );
   }
 
-  // ── Derive active file content ────────────────────────────────────────────
-
-  // Bounds-check: if activeFileIndex is out of range (e.g., parsedDiff updated
-  // with fewer files), clamp to the last valid index.
-  const safeIndex  = Math.min(activeFileIndex, parsedDiff.files.length - 1);
-  const activeFile = parsedDiff.files[safeIndex];
-
   // Join line arrays into full-file strings for Monaco.
   // .join('\n') creates a new string reference on every file switch,
   // which signals to React (and Monaco) that the prop has changed.
-  const original = activeFile.originalLines.join('\n');
-  const modified = activeFile.modifiedLines.join('\n');
-  const language = getMonacoLanguage(activeFile.filePath);
+  const original = activeFile!.originalLines.join('\n');
+  const modified = activeFile!.modifiedLines.join('\n');
+  const language = getMonacoLanguage(activeFile!.filePath);
 
   // ── Render ────────────────────────────────────────────────────────────────
+
 
   return (
     <div className="flex flex-col h-[calc(100vh-57px)] bg-zinc-950">
