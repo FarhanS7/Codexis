@@ -42,7 +42,9 @@ export function useReviewStream(
     setStatus('streaming');
 
     // 3. Open EventSource targeting SSE stream
-    const url = `${API_BASE}/review/stream/${owner}/${repo}/${prNumber}`;
+    const storedModel = typeof window !== 'undefined' ? localStorage.getItem('ai-reviewer:model') : null;
+    const modelParam = storedModel ? `?model=${encodeURIComponent(storedModel)}` : '';
+    const url = `${API_BASE}/review/stream/${owner}/${repo}/${prNumber}${modelParam}`;
     const es = new EventSource(url, { withCredentials: true });
     esRef.current = es;
 
