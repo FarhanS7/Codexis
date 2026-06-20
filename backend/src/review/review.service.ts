@@ -13,6 +13,7 @@ import { CryptoService } from '../auth/crypto.service';
 import { Observable, Subscriber } from 'rxjs';
 import { streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
+import { anthropic } from '@ai-sdk/anthropic';
 import {
   chunkDiff,
   validateSuggestion,
@@ -47,9 +48,10 @@ export class ReviewService {
     repo: string,
     prNumber: number,
     userId: string,
+    model?: string,
   ): Observable<any> {
     return new Observable<any>((subscriber) => {
-      this.runReviewPipeline(owner, repo, prNumber, userId, subscriber).catch(
+      this.runReviewPipeline(owner, repo, prNumber, userId, subscriber, model).catch(
         (err) => {
           this.logger.error('Error in review pipeline', err);
           subscriber.next({
@@ -70,6 +72,7 @@ export class ReviewService {
     prNumber: number,
     userId: string,
     subscriber: Subscriber<any>,
+    modelName?: string,
   ): Promise<void> {
     const startTime = Date.now();
     const allSuggestions: RawSuggestion[] = [];
@@ -164,8 +167,23 @@ export class ReviewService {
       const timeoutId = setTimeout(() => controller.abort(), 25_000);
 
       try {
+        const selectedModel = modelName ?? process.env.DEFAULT_LLM_MODEL ?? 'gpt-4o';
+        let resolvedModel: any;
+
+        if (selectedModel.startsWith('claude-')) {
+          const apiKey = process.env.ANTHROPIC_API_KEY;
+          if (apiKey && apiKey !== 'sk-ant-your-anthropic-key-here') {
+            resolvedModel = anthropic(selectedModel);
+          } else {
+            this.logger.warn(`Anthropic API key not configured. Falling back to default model.`);
+            resolvedModel = openai(process.env.DEFAULT_LLM_MODEL ?? 'gpt-4o');
+          }
+        } else {
+          resolvedModel = openai(selectedModel);
+        }
+
         const { textStream, usage } = await streamText({
-          model: openai(process.env.DEFAULT_LLM_MODEL ?? 'gpt-4o'),
+          model: resolvedModel,
           system: promptVersion.systemPrompt,
           prompt: promptVersion.userPromptTemplate.replace(
             '{{DIFF_CHUNK}}',
@@ -223,13 +241,24 @@ export class ReviewService {
 
     // 9. Save to DB
     const latencyMs = Date.now() - startTime;
-    const estimatedCostUsd = (totalTokens / 1_000_000) * 5.0; // GPT-4o estimate
+    const selectedModel = modelName ?? process.env.DEFAULT_LLM_MODEL ?? 'gpt-4o';
+    let costPerMillion = 5.0; // default (gpt-4o)
+    if (selectedModel === 'gpt-4o-mini') {
+      costPerMillion = 0.150;
+    } else if (selectedModel === 'gpt-3.5-turbo') {
+      costPerMillion = 0.50;
+    } else if (selectedModel.startsWith('claude-3-5-sonnet')) {
+      costPerMillion = 3.0;
+    } else if (selectedModel.startsWith('claude-3-haiku')) {
+      costPerMillion = 0.25;
+    }
+    const estimatedCostUsd = (totalTokens / 1_000_000) * costPerMillion;
 
     const { review, comments } = await this.saveReview(userId, String(pr.id), deduped, {
       tokensUsed: totalTokens,
       estimatedCostUsd,
       latencyMs,
-      model: process.env.DEFAULT_LLM_MODEL ?? 'gpt-4o',
+      model: selectedModel,
       promptVersionId: promptVersion.id,
     });
 

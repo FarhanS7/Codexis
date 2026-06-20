@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Body,
+  Query,
 } from '@nestjs/common';
 import { ReviewService } from './review.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -26,9 +27,10 @@ export class ReviewController {
     @Param('owner') owner: string,
     @Param('repo') repo: string,
     @Param('prNumber', ParseIntPipe) prNumber: number,
+    @Query('model') model: string | undefined,
     @CurrentUser() user: User,
   ): Observable<MessageEvent> {
-    return this.reviewService.streamReview(owner, repo, prNumber, user.id);
+    return this.reviewService.streamReview(owner, repo, prNumber, user.id, model);
   }
 
   @Patch('comments/:commentId/accept')

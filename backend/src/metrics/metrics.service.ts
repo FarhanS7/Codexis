@@ -22,14 +22,11 @@ export class MetricsService {
   async getSummary(userId: string): Promise<MetricsSummary> {
     const now = new Date();
     
-    // Set 'from' to 6 days ago (for a total of 7 days: from -> to inclusive) at start of day
-    const from = new Date(now);
-    from.setDate(from.getDate() - 6);
-    from.setHours(0, 0, 0, 0);
+    // Set 'from' to 6 days ago in UTC at 00:00:00.000Z (total of 7 days inclusive)
+    const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - 6, 0, 0, 0, 0));
 
-    // Set 'to' to end of today
-    const to = new Date(now);
-    to.setHours(23, 59, 59, 999);
+    // Set 'to' to end of today in UTC at 23:59:59.999Z
+    const to = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999));
 
     this.logger.log(`Fetching metrics summary for user: ${userId} from: ${from.toISOString()} to: ${to.toISOString()}`);
 
@@ -101,7 +98,7 @@ export class MetricsService {
         date: dateKey,
         count: dataMap.get(dateKey) ?? 0,
       });
-      current.setDate(current.getDate() + 1);
+      current.setUTCDate(current.getUTCDate() + 1);
     }
 
     return result;
